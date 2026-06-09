@@ -1,2 +1,3 @@
 look-distance: 20
 max-scan-volume: 100000
+ignore-ender-chest: false

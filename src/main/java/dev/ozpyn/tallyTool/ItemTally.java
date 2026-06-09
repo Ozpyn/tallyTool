@@ -5,10 +5,13 @@ import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockState;
+import org.bukkit.block.EnderChest;
 import org.bukkit.block.ShulkerBox;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.ItemFrame;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -16,6 +19,10 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.BlockStateMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import org.jspecify.annotations.NonNull;
 
 import java.util.Comparator;
 import java.util.HashMap;
@@ -93,41 +100,56 @@ public class ItemTally implements CommandExecutor {
     // -----------------------------
     // LOOK AT CONTAINER MODE
     // -----------------------------
-    private boolean tallyLookedAtContainer(Player player) {
+    private void tallyLookedAtContainer(Player player) {
 
         int lookDistance = plugin.getConfig().getInt("look-distance", 20);
 
         Block target = player.getTargetBlockExact(lookDistance);
 
         if (target == null) {
-            player.sendMessage("§cNo block in sight.");
-            return true;
+            player.sendMessage(Component.text("No block in sight.").color(NamedTextColor.RED));
+            return;
         }
 
         BlockState state = target.getState();
 
-        if (!(state instanceof InventoryHolder holder)) {
-            player.sendMessage("§cThat block is not a container.");
-            return true;
+        if (state instanceof InventoryHolder holder) {
+            Inventory inventory = holder.getInventory();
+
+            TallyResult result = new TallyResult();
+
+            for (ItemStack item : inventory.getContents()) {
+                tallyItem(item, result, null);
+            }
+
+            sendOutput(player, result, 1);
+            return;
         }
 
-        Inventory inventory = holder.getInventory();
+        if (state instanceof EnderChest) {
+            if (plugin.getConfig().getBoolean("ignore-ender-chest", true)){
+                player.sendMessage(Component.text("Ender Chest scanning is disabled.").color(NamedTextColor.RED));
+                return;
+            }
+            Inventory inventory = player.getEnderChest();
 
-        TallyResult result = new TallyResult();
+            TallyResult result = new TallyResult();
 
-        for (ItemStack item : inventory.getContents()) {
-            tallyItem(item, result, null);
+            for (ItemStack item : inventory.getContents()) {
+                tallyItem(item, result, null);
+            }
+
+            sendOutput(player, result, 1);
+            return;
         }
 
-        sendOutput(player, result, 1);
-
-        return true;
+        player.sendMessage(Component.text("That block is not a container.").color(NamedTextColor.RED));
     }
 
     // -----------------------------
     // REGION MODE
     // -----------------------------
-    private boolean tallyRegion(Player player, String[] args) {
+    private void tallyRegion(Player player, String[] args) {
 
         try {
             Location loc = player.getLocation();
@@ -150,9 +172,17 @@ public class ItemTally implements CommandExecutor {
             int maxY = Math.max(y1, y2);
             int maxZ = Math.max(z1, z2);
 
+            int volume = (maxX - minX) * (maxY - minY) * (maxZ - minZ);
+
+            if(volume > plugin.getConfig().getInt("max-scan-volume", 100000)) {
+                player.sendMessage("The attempted action involves " + volume + " blocks, but the max is " + plugin.getConfig().getInt("max-scan-volume", 100000) + ".");
+                return;
+            }
+
             TallyResult result = new TallyResult();
 
             int containers = 0;
+            boolean enderChestTallied = plugin.getConfig().getBoolean("ignore-ender-chest", true);
 
             for (int x = minX; x <= maxX; x++) {
                 for (int y = minY; y <= maxY; y++) {
@@ -161,27 +191,60 @@ public class ItemTally implements CommandExecutor {
                         Block block = world.getBlockAt(x, y, z);
                         BlockState state = block.getState();
 
-                        if (!(state instanceof InventoryHolder holder)) continue;
+                        if (state instanceof InventoryHolder holder) {
+                            containers++;
 
-                        containers++;
+                            for (ItemStack item : holder.getInventory().getContents()) {
+                                tallyItem(item, result, null);
+                            }
+                            continue;
+                        }
 
-                        for (ItemStack item : holder.getInventory().getContents()) {
-                            tallyItem(item, result, null);
+                        if (state instanceof EnderChest && !enderChestTallied) {
+                            containers++;
+                            enderChestTallied = true;
+
+                            for (ItemStack item : player.getEnderChest().getContents()) {
+                                tallyItem(item, result, null);
+                            }
                         }
                     }
                 }
             }
 
-            player.sendMessage("§6=== Tally Results ===");
-            player.sendMessage("§eContainers Scanned: §f" + containers);
+            Location center = new Location(world,
+                    (minX + maxX) / 2.0, (minY + maxY) / 2.0, (minZ + maxZ) / 2.0);
+            double rx = (maxX - minX) / 2.0;
+            double ry = (maxY - minY) / 2.0;
+            double rz = (maxZ - minZ) / 2.0;
+
+            for (Entity entity : world.getNearbyEntities(center, rx, ry, rz)) {
+                if (entity instanceof InventoryHolder holder) {
+                    containers++;
+
+                    for (ItemStack item : holder.getInventory().getContents()) {
+                        tallyItem(item, result, null);
+                    }
+                    continue;
+                }
+
+                if (entity instanceof ItemFrame frame) {
+                    ItemStack item = frame.getItem();
+                    if (item != null && !item.getType().isAir()) {
+                        containers++;
+                        tallyItem(item, result, null);
+                    }
+                }
+            }
+
+            player.sendMessage(Component.text("=== Tally Results ===").color(NamedTextColor.GOLD));
+            player.sendMessage(Component.text("Containers Scanned: ").color(NamedTextColor.YELLOW)
+                            .append(Component.text(containers).color(NamedTextColor.WHITE)));
 
             sendOutput(player, result, containers);
 
-            return true;
-
         } catch (NumberFormatException ex) {
-            player.sendMessage("§cCoordinates must be numbers.");
-            return true;
+            player.sendMessage(Component.text("Coordinates must be numbers.").color(NamedTextColor.RED));
         }
     }
 
@@ -190,31 +253,34 @@ public class ItemTally implements CommandExecutor {
     // -----------------------------
     private void sendOutput(Player player, TallyResult result, int containers) {
 
-        player.sendMessage("§6=== Container Tally ===");
+        player.sendMessage(Component.text("=== Container Tally ===").color(NamedTextColor.GOLD));
 
         result.totals.entrySet().stream()
                 .sorted(Map.Entry.<Material, Long>comparingByValue(Comparator.reverseOrder()))
                 .forEach(entry ->
                         player.sendMessage(
-                                "§a" + entry.getKey().name()
-                                        + "§f: " + entry.getValue()
+                                Component.text(entry.getKey().name()).color(NamedTextColor.GREEN)
+                                        .append(Component.text(": ").color(NamedTextColor.WHITE))
+                                        .append(Component.text(entry.getValue()).color(NamedTextColor.WHITE))
                         )
                 );
 
         if (!result.containerContents.isEmpty()) {
 
-            player.sendMessage("§6=== Nested Containers ===");
+            player.sendMessage(Component.text("=== Nested Containers ===").color(NamedTextColor.GOLD));
 
             result.containerContents.forEach((container, contents) -> {
 
-                player.sendMessage("§b" + container);
+                player.sendMessage(Component.text(container).color(NamedTextColor.AQUA));
 
                 contents.entrySet().stream()
                         .sorted(Map.Entry.<Material, Long>comparingByValue(Comparator.reverseOrder()))
                         .forEach(entry ->
                                 player.sendMessage(
-                                        "§7- " + entry.getKey().name()
-                                                + ": " + entry.getValue()
+                                        Component.text("- ").color(NamedTextColor.GRAY)
+                                                .append(Component.text(entry.getKey().name()).color(NamedTextColor.GRAY))
+                                                .append(Component.text(": ").color(NamedTextColor.GRAY))
+                                                .append(Component.text(entry.getValue()).color(NamedTextColor.GRAY))
                                 )
                         );
             });
@@ -225,10 +291,7 @@ public class ItemTally implements CommandExecutor {
     // COMMAND ENTRY
     // -----------------------------
     @Override
-    public boolean onCommand(CommandSender sender,
-                             Command command,
-                             String label,
-                             String[] args) {
+    public boolean onCommand(@NonNull CommandSender sender, @NonNull Command command, @NonNull String label, String @NonNull [] args) {
 
         if (!(sender instanceof Player player)) {
             sender.sendMessage("Players only.");
@@ -236,14 +299,16 @@ public class ItemTally implements CommandExecutor {
         }
 
         if (args.length == 0) {
-            return tallyLookedAtContainer(player);
+            tallyLookedAtContainer(player);
+            return true;
         }
 
         if (args.length == 6) {
-            return tallyRegion(player, args);
+            tallyRegion(player, args);
+            return true;
         }
 
-        player.sendMessage("§cUsage: /itemtally OR /itemtally <x1 y1 z1 x2 y2 z2>");
+        player.sendMessage(Component.text("Usage: /itemtally OR /itemtally <x1 y1 z1 x2 y2 z2>").color(NamedTextColor.RED));
         return true;
     }
 }
