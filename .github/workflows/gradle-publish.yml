@@ -33,6 +33,10 @@ jobs:
         with:
           files: build/libs/*.jar
 
+      - name: Get JAR filename
+        id: jar
+        run: echo "filename=$(ls build/libs/*.jar | head -1)" >> "$GITHUB_OUTPUT"
+
       - name: Upload to Modrinth
         uses: cloudnode-pro/modrinth-publish@v2
         with:
@@ -44,5 +48,5 @@ jobs:
           loaders: |-
             paper
           game-versions: |-
-            26.1.2
-          files: build/libs/*.jar
+            1.21.1
+          files: ${{ steps.jar.outputs.filename }}
