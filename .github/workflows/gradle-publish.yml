@@ -3,6 +3,7 @@ name: Build TallyTool
 on:
   release:
     types: [created]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -33,20 +34,14 @@ jobs:
         with:
           files: build/libs/*.jar
 
-      - name: Get JAR filename
-        id: jar
-        run: echo "filename=$(ls build/libs/*.jar | head -1)" >> "$GITHUB_OUTPUT"
-
       - name: Upload to Modrinth
         uses: cloudnode-pro/modrinth-publish@v2
         with:
           token: ${{ secrets.MODRINTH_TOKEN }}
-          project: ${{ vars.MODRINTH_ID }}
+          project: ${{ secrets.MODRINTH_ID }}
           name: ${{ github.event.release.name }}
           version: ${{ github.event.release.tag_name }}
           changelog: ${{ github.event.release.body }}
-          loaders: |-
-            paper
-          game-versions: |-
-            1.21.1
-          files: ${{ steps.jar.outputs.filename }}
+          loaders: paper
+          game-versions: 26.1.2
+          files: build/libs/*.jar
