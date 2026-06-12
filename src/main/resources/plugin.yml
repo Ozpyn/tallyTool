@@ -9,7 +9,13 @@ commands:
     description: Scan a region and count all items in inventories.
     usage: /itemtally <x1> <y1> <z1> <x2> <y2> <z2>
     permission: tallytool.itemtally
+  entitytally:
+    description: Scan a region and count all entities.
+    usage: /entitytally [radius] OR /entitytally <x1> <y1> <z1> <x2> <y2> <z2>
+    permission: tallytool.entitytally
 
 permissions:
   tallytool.itemtally:
+    default: op
+  tallytool.entitytally:
     default: op
