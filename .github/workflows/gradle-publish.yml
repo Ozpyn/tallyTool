@@ -31,4 +31,18 @@ jobs:
       - name: Upload build artifact to release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/libs/*.jar
+          files: build/libs/*-${{ github.event.release.tag_name }}.jar
+
+      - name: Upload to Modrinth
+        uses: cloudnode-pro/modrinth-publish@v2
+        with:
+          token: ${{ secrets.MODRINTH_TOKEN }}
+          project: ${{ vars.MODRINTH_ID }}
+          name: ${{ github.event.release.name }}
+          version: ${{ github.event.release.tag_name }}
+          changelog: ${{ github.event.release.body }}
+          loaders: |-
+            paper
+          game-versions: |-
+            26.1.2
+          files: build/libs/*-${{ github.event.release.tag_name }}.jar
