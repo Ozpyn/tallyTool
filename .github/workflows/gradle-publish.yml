@@ -31,7 +31,7 @@ jobs:
       - name: Upload build artifact to release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/libs/*-${{ github.event.release.tag_name }}.jar
+          files: build/libs/*.jar
 
       - name: Upload to Modrinth
         uses: cloudnode-pro/modrinth-publish@v2
@@ -45,4 +45,4 @@ jobs:
             paper
           game-versions: |-
             26.1.2
-          files: build/libs/*-${{ github.event.release.tag_name }}.jar
+          files: build/libs/*.jar
